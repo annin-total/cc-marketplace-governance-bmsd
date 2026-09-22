@@ -13,4 +13,4 @@ BMSD 本部が配布する Claude Code マーケットプレイスの実体で�
 
 ## リリース手順
 
-リリースの手順とスクリプトは開発リポジトリ側にある。`cc-governance-bmsd/docs/release.md` を参照する。
+リリースの手順は開発リポジトリ側にある。`cc-governance-bmsd/docs/release.md` を参照する。差し込んだら PR を作る前に、このリポジトリで `scripts/validate.sh` を実行し、`[NG]` が無いことを確認する。
