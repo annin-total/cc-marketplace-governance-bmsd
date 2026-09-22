@@ -79,11 +79,12 @@ BMSD 本部以外の部署が、自部署の Claude Code プラグインを作�
 
 `scripts/validate.py` は、マニフェストとしての形式検証（`marketplace.json` /
 `plugin.json` の構文・必須項目・未知フィールド）を `claude plugin validate --strict`
-に委譲する。このスクリプト自身が見るのは、上流が見ない項目だけである。
+に委譲する。このスクリプト自身が見るのは、配布リポジトリ固有の関心事である
+「`.gitignore` に飲まれて配布物が欠落していないか」だけである。
 
-- 標準ライブラリ以外の import が無いこと（プラグインは pip install を要求できない）
-- hook が隔離環境で exit 0・無出力で終わること
-- `.gitignore` に飲まれて配布物が欠落していないこと
+標準ライブラリ以外の import・hook の終了コードは、差し込み前に開発リポジトリの
+`scripts/validate_plugin.py` が見る。配布物はその複製なので、開発側で通っていれば
+配布側でも通っている。二重に検査しない。
 
 `templates/plugin/` も収録プラグインと同じ検査にかける。`plugin.json` の `version`
 が上がっているか、`POLICY` からキーが削除されていないかは検証しない。これらは開発

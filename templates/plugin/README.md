@@ -16,6 +16,6 @@ BMSD 本部以外の部署が、自部署の Claude Code プラグインを作�
 ## この雛形が検証されていること
 
 このリポジトリの `scripts/validate.py` は、`templates/plugin/` も他の収録プラグインと
-同じ検査（`claude plugin validate --strict` への委譲、標準ライブラリ以外の import が
-無いこと、hook の終了コード、`.gitignore` に飲まれた配布物の欠落）にかける。
-雛形として配る内容が実際に検証を通ることを、このリポジトリ自身の CI で保証する。
+同じ検査（`claude plugin validate --strict` への委譲、`.gitignore` に飲まれた配布物の
+欠落）にかける。雛形として配る内容が実際に検証を通ることを、このリポジトリ自身の
+CI で保証する。
