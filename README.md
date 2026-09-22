@@ -24,11 +24,13 @@ cc-marketplace-governance-bmsd/
     governance/             # 開発リポジトリの plugin/ を差し込んだ結果
       .claude-plugin/plugin.json
       hooks/
-      skills/
-      commands/
       notices.json
       config.json
-  scripts/validate.py        # マーケットプレイスとしての形式検証
+  templates/plugin/          # プラグインの雛形（他部署が自分のプラグインを作るための実体）
+    .claude-plugin/plugin.json
+    skills/example/SKILL.md
+    README.md
+  scripts/validate.py        # 収録プラグイン・雛形の検証
 ```
 
 `.claude-plugin/marketplace.json` は、マーケットプレイス自体の名前と所有者、そして収録
@@ -54,6 +56,15 @@ cc-marketplace-governance-bmsd/
 結果である。**このリポジトリで直接編集しない。** 変更は必ず開発リポジトリの `plugin/` に
 対して行い、リリース手順に従って差し込む。
 
+## `templates/plugin/` はプラグインの雛形である
+
+BMSD 本部以外の部署が、自部署の Claude Code プラグインを作るときの出発点である。
+`governance` プラグイン固有の内容は含まない、最小構成のプラグイン（`plugin.json` と
+サンプルスキル 1 件）である。使い方は `templates/plugin/README.md` を参照する。
+
+`plugins/governance/` とは異なり、これは複製ではなく実体そのものである。
+`scripts/validate.py` が検証にかけるため、雛形として配る内容が壊れたまま残ることはない。
+
 ## リリース手順
 
 リリースの手順は開発リポジトリ側にある。`cc-governance-bmsd/docs/release.md` を参照する。
@@ -66,11 +77,17 @@ cc-marketplace-governance-bmsd/
 3. このリポジトリで `python scripts/validate.py` を実行し、`[NG]` が無いことを確認する
 4. このリポジトリで PR を作り、マージする。マージされた時点で配布される
 
-`scripts/validate.py` が見るのは、Claude Code のプラグイン／マーケットプレイスとしての
-**形式**だけである（`marketplace.json` の整合性、収録プラグインの `plugin.json` の名前
-一致、JSON の構文、開発用ファイルの混入なし、git に無視されているファイルが無いこと）。
-`plugin.json` の `version` が上がっているか、`POLICY` からキーが削除されていないかは
-検証しない。これらは開発リポジトリ側の確認項目である。
+`scripts/validate.py` は、マニフェストとしての形式検証（`marketplace.json` /
+`plugin.json` の構文・必須項目・未知フィールド）を `claude plugin validate --strict`
+に委譲する。このスクリプト自身が見るのは、上流が見ない項目だけである。
+
+- 標準ライブラリ以外の import が無いこと（プラグインは pip install を要求できない）
+- hook が隔離環境で exit 0・無出力で終わること
+- `.gitignore` に飲まれて配布物が欠落していないこと
+
+`templates/plugin/` も収録プラグインと同じ検査にかける。`plugin.json` の `version`
+が上がっているか、`POLICY` からキーが削除されていないかは検証しない。これらは開発
+リポジトリ側の確認項目である。
 
 ## 利用者への導入手順
 

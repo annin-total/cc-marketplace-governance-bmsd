@@ -113,7 +113,7 @@ def _plugin_root() -> Path:
     """プラグインのルートディレクトリを解決する。
 
     `CLAUDE_PLUGIN_ROOT` があればそのディレクトリ、無ければこのファイルの 2 階層上
-    （`governance/`）を使う。呼び出しごとに評価し、import 時に固定しない。
+    （`plugin/`）を使う。呼び出しごとに評価し、import 時に固定しない。
     """
     root = os.environ.get(_ENV_PLUGIN_ROOT)
     if root:

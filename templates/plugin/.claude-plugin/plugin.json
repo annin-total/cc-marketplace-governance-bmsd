@@ -1,0 +1,8 @@
+{
+  "name": "example-plugin",
+  "version": "0.1.0",
+  "description": "プラグインの雛形。name・description・skills を差し替えて使う",
+  "author": {
+    "name": "BMSD"
+  }
+}
