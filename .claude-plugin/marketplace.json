@@ -1,6 +1,9 @@
 {
   "name": "cc-marketplace-governance-bmsd",
-  "owner": "BMSD",
+  "owner": {
+    "name": "BMSD"
+  },
+  "description": "BMSD 本部が配布する Claude Code プラグインのマーケットプレイス",
   "plugins": [
     {
       "name": "governance",
