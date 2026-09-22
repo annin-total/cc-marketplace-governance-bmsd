@@ -1,0 +1,11 @@
+{
+  "name": "cc-marketplace-governance-bmsd",
+  "owner": "BMSD",
+  "plugins": [
+    {
+      "name": "governance",
+      "source": "./plugins/governance",
+      "description": "BMSD 本部向けの利用状況収集とポリシー適用を行う端末プラグイン"
+    }
+  ]
+}
