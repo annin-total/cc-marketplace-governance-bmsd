@@ -1,5 +1,6 @@
 """端末プラグインとサーバが共有する契約の正本。標準ライブラリのみで動く。"""
 
+import json
 from typing import Any, Optional
 
 HOOK_FIELDS = (
@@ -46,12 +47,6 @@ POLICY_COLUMNS = (
     ("apply_result", "VARCHAR(32)"),
     ("plugin_version", "VARCHAR(32)"),
 )
-
-POLICY = {
-    # settings.json 内のドット区切りパス -> 適用する値
-    "env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60",
-    "extraKnownMarketplaces.cc-marketplace-governance-bmsd.autoUpdate": True,
-}
 
 CSV_COLUMNS = (
     # (CSV ヘッダ名, DB 列名, 型) の 3 つ組。source_file はヘッダを持たないため None
@@ -149,6 +144,24 @@ def coerce(value: Any, type_str: str) -> Any:
     if token == "DOUBLE":
         return _coerce_double(value)
     return None
+
+
+def policy_key_name(op: str, path: str) -> str:
+    """policy_state.key_name を組み立てる。`set` はパスそのまま、ほかは `<操作>:<パス>`。
+
+    接頭辞は同じパスの ADD と REMOVE を区別するため。`set` は記録済みの行と key_name を揃える。
+    """
+    return path if op == "set" else f"{op}:{path}"
+
+
+def policy_text(value: Any) -> Optional[str]:
+    """管理者が書いた値を policy_state.value の表現にする。dict・list は JSON 文字列にする。
+
+    利用者の現在値（prev_value）には使わない。そちらは `coerce` でスカラ以外を None にする。
+    """
+    if isinstance(value, (dict, list)):
+        value = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return coerce(value, "VARCHAR(255)")
 
 
 _JST_OFFSET_SECONDS = 9 * 3600
