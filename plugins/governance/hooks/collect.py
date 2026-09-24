@@ -6,7 +6,7 @@
 """
 
 if __name__ == "__main__":
-    # R-42: `except BaseException` は `main()` の実行中しか守らない。SIGINT がこの下の
+    # `except BaseException` は `main()` の実行中しか守らない。SIGINT がこの下の
     # import 文の最中に届くと、まだ try 節の外であるためトレースバックが標準エラーに漏れる
     # （実測で確認済み）。`_signal` は enum ラッパーを介さない素の C 拡張であり、
     # import より前に SIGINT を無視することで、この窓を最小化する。

@@ -21,7 +21,6 @@ _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 _DEFAULT_CONFIG = {
     "ingest_url": "",
     "ingest_token": "",
-    "flush_interval_sec": _spool.DEFAULT_FLUSH_INTERVAL_SEC,
     "timeout_sec": 60,
     "spool_max_bytes": _spool.DEFAULT_SPOOL_MAX_BYTES,
     "spool_max_days": _spool.DEFAULT_SPOOL_MAX_DAYS,
