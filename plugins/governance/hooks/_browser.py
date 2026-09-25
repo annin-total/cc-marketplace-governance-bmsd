@@ -1,8 +1,4 @@
-"""起動形態の判定と、お知らせの URL を既定ブラウザで開く処理。例外を外に出さない。
-
-起動形態は Claude Code が hook に渡す `CLAUDE_CODE_ENTRYPOINT` で判定する。
-ブラウザを開くのは対話セッション（許可リストの値）のときだけで、値が無い・未知なら開かない。
-"""
+"""`CLAUDE_CODE_ENTRYPOINT` による起動形態の判定と、URL を既定ブラウザで開く処理。"""
 
 import os
 import subprocess
@@ -24,10 +20,9 @@ def is_headless() -> bool:
 
 
 def open_url(url: str) -> None:
-    """`url` を OS の既定ブラウザで開く。待たない。macOS と Windows 以外では何もしない。
+    """`url` を既定ブラウザで開く。待たない。macOS と Windows 以外では何もしない。
 
-    Windows は `os.startfile`（ShellExecute）で開く。`cmd /c start` はシェルを通るため、
-    URL の `&` などでコマンドが分断される。macOS は `open` を detach して起動する。
+    Windows で `cmd /c start` を使わないのは、シェルを通り URL の `&` などで分断されるため。
     """
     try:
         if sys.platform == "win32":

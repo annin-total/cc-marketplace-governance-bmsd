@@ -1,7 +1,6 @@
-"""`<config_dir>/governance/` の管理。settings.json のバックアップ・ONCE の記録・statusline.js の同期。
+"""`<config_dir>/governance/`（バックアップ・ONCE の記録・statusline.js）の管理。
 
-config_dir は `CLAUDE_CONFIG_DIR`、無ければ `~/.claude`。ここに置くものはプラグインを
-アンインストールしても残る（`CLAUDE_PLUGIN_DATA` と違い、利用者の設定から参照されうるため）。
+プラグインの削除後も残す場所（利用者の設定から参照されうるため `CLAUDE_PLUGIN_DATA` に置かない）。
 """
 
 import datetime
@@ -24,7 +23,7 @@ _STATUSLINE_SRC = (
 
 
 def config_dir() -> Path:
-    """config_dir を解決する。呼び出しのたびに評価する（テストや隔離環境の差し替えを効かせる）。"""
+    """`CLAUDE_CONFIG_DIR`、無ければ `~/.claude`。隔離の差し替えを効かせるため毎回評価する。"""
     value = os.environ.get(_CONFIG_DIR_ENV)
     return Path(value) if value else Path.home() / ".claude"
 
@@ -38,10 +37,9 @@ def governance_dir() -> Path:
 
 
 def backup(settings: Path, gov_dir: Path) -> bool:
-    """settings.json を丸ごと日時付きで保存し、直近 `_BACKUP_KEEP` 世代だけ残す。保存できれば真。
+    """settings.json を日時付きで保存し、直近 `_BACKUP_KEEP` 世代だけ残す。保存できれば真。
 
-    時計の粒度が粗い OS でも名前が衝突しないよう連番を付け、既存のファイルは上書きしない（O_EXCL）。
-    古い世代を消せなくても保存は済んでいるので真を返す。
+    時計の粒度が粗い OS でも衝突しないよう連番を付け、O_EXCL で既存を上書きしない。
     """
     backup_dir = gov_dir / _BACKUP_DIRNAME
     stamp = datetime.datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
@@ -70,7 +68,7 @@ def backup(settings: Path, gov_dir: Path) -> bool:
 
 
 def load_once(gov_dir: Path) -> set:
-    """適用済みの ONCE のキーを読む。読めなければ空（＝未適用として扱う）。"""
+    """適用済みの ONCE のキーを読む。読めなければ空。"""
     try:
         data = json.loads((gov_dir / _ONCE_FILENAME).read_text(encoding="utf-8"))
     except (OSError, ValueError, RecursionError):
@@ -89,7 +87,6 @@ def save_once(gov_dir: Path, keys: set) -> None:
 
 
 def clear_once(gov_dir: Path) -> None:
-    """ONCE の記録を消す。無ければ何もしない。"""
     try:
         (gov_dir / _ONCE_FILENAME).unlink()
     except FileNotFoundError:
@@ -97,9 +94,9 @@ def clear_once(gov_dir: Path) -> None:
 
 
 def sync_statusline(gov_dir: Path, src: Path = _STATUSLINE_SRC) -> None:
-    """同梱の statusline.js を内容が違うときだけ `gov_dir` へ複製する。失敗しても何もしない。
+    """同梱の statusline.js を内容が違うときだけ `gov_dir` へ複製する。
 
-    一時ファイルから置き換えるのは、書きかけのファイルをステータスラインが実行しないため。
+    一時ファイルから置き換える（書きかけをステータスラインに実行させない）。
     """
     try:
         content = src.read_bytes()

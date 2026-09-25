@@ -1,10 +1,4 @@
-"""settings.json への標準設定の適用。標準ライブラリのみで動く。
-
-読み取り・mtime 検査・バックアップ・原子的置換・適用結果の返却を受け持つ。操作の中身は
-`_policy_ops.py`、`<config_dir>/governance/` 配下のファイルは `_govdir.py` にある。
-キューにも契約の DB 定義にも触れない。返すのはキーごとの
-(key_name, value, prev_value, apply_result) の list だけ。
-"""
+"""settings.json への標準設定の適用（読み取り・mtime 検査・バックアップ・原子的置換）。"""
 
 import json
 import os
@@ -19,23 +13,17 @@ Row = tuple[str, Optional[str], Optional[str], str]
 
 
 def _load(path: Path):
-    """設定ファイルを読む。('ok'/'missing'/'parse_failed', data, mtime_ns) の組で返す。
-
-    存在しない場合は data={} として扱う。パース失敗・トップレベルが dict でない場合は
-    data=None とし、例外は外に漏らさない。
-    """
+    """('ok'/'missing'/'parse_failed', data, mtime_ns) を返す。無ければ data={}。"""
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return "missing", {}, None
-    # 非 UTF-8 のバイト列を含むファイルでは strict デコードが UnicodeDecodeError を投げる。
-    # これは OSError ではなく ValueError 派生であり、捕まえ損ねると SessionStart のたびに
-    # 例外が漏れ、お知らせも policy イベントも到達しないままその端末が画面から消える。
+    # 非 UTF-8 なら UnicodeDecodeError（ValueError 派生、OSError ではない）。捕まえ損ねると
+    # SessionStart のたびに例外が漏れ、その端末の policy イベントが届かなくなる。
     except (OSError, ValueError):
         return "parse_failed", None, None
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
+    mtime_ns = _stat_mtime_ns(path)
+    if mtime_ns is None:
         return "parse_failed", None, None
     try:
         data = json.loads(text)
@@ -48,11 +36,9 @@ def _load(path: Path):
 
 
 def _resolve(path: Path) -> Path:
-    """シンボリックリンクなら実体を指すパスに解決する。
+    """シンボリックリンクを実体のパスに解決する。
 
-    `os.replace` はリンクそのものを置き換えるため、解決しないと dotfiles 管理下の端末で
-    リンクが普通のファイルに化け、実体側は古い内容のまま取り残される。しかも結果は
-    `applied` と記録されるため、壊れたことが画面からは分からない。
+    `os.replace` はリンク自体を置き換えるため、解決しないとリンクが普通のファイルに化ける。
     """
     try:
         return path.resolve()
@@ -61,7 +47,6 @@ def _resolve(path: Path) -> Path:
 
 
 def _stat_mtime_ns(path: Path) -> Optional[int]:
-    """mtime をナノ秒単位で返す。読めなければ None。"""
     try:
         return path.stat().st_mtime_ns
     except OSError:
@@ -69,10 +54,7 @@ def _stat_mtime_ns(path: Path) -> Optional[int]:
 
 
 def _write(config_path: Path, data: dict, expected_mtime_ns, gov_dir: Path) -> str:
-    """原子的に置換する。'applied'/'skipped_conflict'/'write_failed' を返す。
-
-    置換の直前に元のファイルを丸ごとバックアップし、それに失敗したら書かない。
-    """
+    """原子的に置換する。バックアップに失敗したら書かない。"""
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
@@ -110,10 +92,7 @@ def _row(entry: dict) -> Row:
 
 
 def apply_settings(config_path, policy: Any, gov_dir: Path) -> list[Row]:
-    """`policy` の SET / ADD / REMOVE / ONCE を settings.json に当て、差分があれば書く。
-
-    `gov_dir` はバックアップと ONCE の記録の置き場。例外は呼び出し元に漏らさない。
-    """
+    """`policy` を settings.json に当て、差分があれば書く。キーごとの結果を返す。"""
     config_path = _resolve(Path(config_path))
     status, data, mtime_ns = _load(config_path)
     if status == "parse_failed":

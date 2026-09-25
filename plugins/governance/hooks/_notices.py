@@ -1,9 +1,4 @@
-"""SessionStart の未読お知らせ処理。契約（`contract`）にも識別子（`_identity`）にも依存しない。
-
-`notices.json` を読み、未読を選び、出力用の文字列と開く URL を組み立て、既読を記録するところまでを担う。
-出力そのもの（標準出力への書き出し）、ブラウザの起動、既読を書き込むタイミングの判断は
-呼び出し元（`session_start.py`）が持つ。ここでは出力も既読の書き込みも行わない。
-"""
+"""未読のお知らせの選択と表示文字列の組み立て。出力・ブラウザ起動・既読を書く時機は呼び出し元が持つ。"""
 
 import json
 from pathlib import Path
@@ -23,16 +18,11 @@ _NOTICES_PATH = Path(__file__).resolve().parent.parent / "notices.json"
 
 
 def _seen_path() -> Path:
-    """既読 ID 集合 `seen.json` のパスを返す。状態ディレクトリの規則は `_spool` に従う。"""
     return _state_dir() / _SEEN_FILENAME
 
 
 def _read_notices(path: Path = _NOTICES_PATH) -> list:
-    """`notices.json` を読む。無い・壊れている・配列でない場合は空リストとする。
-
-    `body` が文字列でない項目は壊れているとみなして飛ばす。1 件の欠陥が、
-    同じファイルの正常な項目まで隠さないようにするため。
-    """
+    """`notices.json` を読む。読めなければ空。壊れた項目だけを飛ばし、他の項目は残す。"""
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -50,7 +40,7 @@ def _read_notices(path: Path = _NOTICES_PATH) -> list:
 
 
 def _read_seen() -> set:
-    """既読 ID の集合を読む。無い・壊れている・配列でない場合は空集合とする。"""
+    """既読 ID の集合を読む。読めなければ空。"""
     try:
         with open(_seen_path(), encoding="utf-8") as f:
             data = json.load(f)
@@ -62,12 +52,11 @@ def _read_seen() -> set:
 
 
 def _select_unread(notices: list, seen: set) -> list:
-    """未読（`seen` に無い id）のお知らせだけを、`notices` の順序を保って返す。"""
     return [n for n in notices if n["id"] not in seen]
 
 
 def _write_seen(seen_ids: set) -> bool:
-    """既読 ID の集合を `seen.json` に書く。書けたら真。失敗しても例外を外に出さない。"""
+    """既読 ID の集合を書く。書けたら真。"""
     path = _seen_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,11 +68,7 @@ def _write_seen(seen_ids: set) -> bool:
 
 
 def _valid_url(notice: dict) -> Optional[str]:
-    """お知らせの `url` が開いてよい形なら返す。そうでなければ None。
-
-    https だけを許し、ASCII 以外・空白・制御文字・区切り文字を含むものと、長すぎるもの、
-    ホストが空のものを拒否する。不正な `url` は項目ごとではなく `url` だけを無視する。
-    """
+    """`url` が開いてよい形（https・ASCII・禁止文字なし・長さ上限内・ホストあり）なら返す。"""
     url = notice.get("url")
     if not isinstance(url, str) or not url.startswith(_URL_SCHEME):
         return None
@@ -99,7 +84,7 @@ def _valid_url(notice: dict) -> Optional[str]:
 
 
 def first_url(unread: list) -> Optional[str]:
-    """未読のうち、開いてよい `url` を持つ先頭の 1 件の URL を返す。無ければ None。"""
+    """開いてよい `url` を持つ先頭の 1 件の URL。無ければ None。"""
     for notice in unread:
         url = _valid_url(notice)
         if url:
@@ -108,7 +93,7 @@ def first_url(unread: list) -> Optional[str]:
 
 
 def _format_message(unread: list) -> str:
-    """未読のお知らせを、空行 1 つで区切った 1 つの文字列にまとめる。件ごとの接頭辞は付けない。"""
+    """未読のお知らせを空行区切りの 1 つの文字列にする。"""
     parts = []
     for notice in unread:
         title = notice.get("title")
@@ -121,10 +106,7 @@ def _format_message(unread: list) -> str:
 
 
 def notices_step(disabled: bool, notices_path: Path = _NOTICES_PATH) -> tuple:
-    """未読のお知らせから出力用の dict を組み立てる。戻り値は (output, unread, seen)。
-
-    出力も既読の書き込みもここでは行わない。呼び出し元が必ず 1 回だけ出力できるようにするため。
-    """
+    """(output, unread, seen) を返す。出力は呼び出し元が 1 回だけ行うため、ここでは書かない。"""
     if disabled:
         return {}, [], set()
 

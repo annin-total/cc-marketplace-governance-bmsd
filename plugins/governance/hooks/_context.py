@@ -1,9 +1,4 @@
-"""transcript 末尾から context_tokens を取得する。標準ライブラリのみで動く。
-
-末尾 256KB だけをバイト列として読み、行を逆順に走査して最初に見つかった
-`message.usage` の 3 値を合計する。合計が 0 の usage（API エラー応答）は採らず、
-さらに前の行へ遡る。どの入力でも例外を外に出さない。
-"""
+"""transcript 末尾の最後の `message.usage` から context_tokens を求める。例外を外に出さない。"""
 
 import json
 from typing import Optional
@@ -13,7 +8,7 @@ _USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_
 
 
 def context_tokens(path: Optional[str], tail: int = _TAIL_BYTES) -> Optional[int]:
-    """transcript の末尾 `tail` バイトから context_tokens を算出する。取得できなければ None。"""
+    """末尾 `tail` バイトから context_tokens を求める。取れなければ None。"""
     chunk = _read_tail(path, tail)
     if chunk is None:
         return None
@@ -26,10 +21,9 @@ def context_tokens(path: Optional[str], tail: int = _TAIL_BYTES) -> Optional[int
 
 
 def _read_tail(path: Optional[str], tail: int) -> Optional[bytes]:
-    """ファイル末尾 `tail` バイトを読む。読めない場合は None を返す。
+    """ファイル末尾 `tail` バイトを読む。読めなければ None。
 
-    `path` が `str` でなければ即座に None を返す。`bool` / `int` を素通しすると
-    `open()` がファイル記述子として解釈し、`True`（== 1）は標準出力を閉じてしまう。
+    `str` 以外を弾く。`open(True)` は fd 1 として開き、閉じるときに標準出力を閉じてしまう。
     """
     if not isinstance(path, str) or not path:
         return None
@@ -44,7 +38,7 @@ def _read_tail(path: Optional[str], tail: int) -> Optional[bytes]:
 
 
 def _usage_total(line: bytes) -> Optional[int]:
-    """1 行から `message.usage` の 3 値の合計を取り出す。取れない場合は None。"""
+    """1 行の `message.usage` の 3 値の合計。取れなければ None。"""
     try:
         obj = json.loads(line)
     except ValueError:
@@ -64,7 +58,7 @@ def _usage_total(line: bytes) -> Optional[int]:
 
 
 def _as_number(value):
-    """usage の 1 項を数値に寄せる。真偽値・数値以外は合算不能として例外を投げる。"""
+    """真偽値・数値以外なら TypeError を投げる。"""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError
     return value

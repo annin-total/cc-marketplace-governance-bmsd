@@ -1,16 +1,10 @@
-"""SessionStart hook のエントリ。statusline.js の同期 -> 設定の適用 -> お知らせの表示 ->
-イベントの収集の順に実行する。
+"""SessionStart hook のエントリ。各段を個別に例外から守り、1 つの失敗で残りを止めない。
 
-お知らせは、非対話起動（`claude -p` など）では既読にしない。URL 付きの未読があれば、
-既読の記録に成功した対話セッションに限り、先頭 1 件だけを既定ブラウザで開く。
-
-4 つはそれぞれ個別に例外から守り、1 つの失敗が残りを巻き添えにしない。無効化スイッチ
-（`CC_GOVERNANCE_DISABLE`）が止めるのは、お知らせの表示と利用ログの収集だけである。
-statusline.js の同期・設定の適用・その policy イベントの記録・送信条件の判定はスイッチの外側で行う。
+無効化スイッチが止めるのはお知らせと利用ログの収集だけ。設定の適用・policy イベント・送信判定は止めない。
 """
 
 if __name__ == "__main__":
-    # collect.py と同じ理由（import 中の SIGINT でトレースバックが漏れる）で、スクリプト起動時だけ SIGINT を無視する。
+    # collect.py と同じ理由（import 中の SIGINT でトレースバックが漏れる）で先に無視する。
     import _signal
 
     _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
@@ -27,12 +21,8 @@ import _identity
 import _notices
 import _spool
 from _settings import apply_settings
-from collect import _read_stdin_json, extract_event
+from collect import _DISABLE_ENV, _read_stdin_json, extract_event, send_if_due
 from contract import POLICY_COLUMNS, coerce, to_day
-
-_DISABLE_ENV = "CC_GOVERNANCE_DISABLE"
-
-_NOTICES_PATH = _notices._NOTICES_PATH
 
 
 def _policy_row(
@@ -43,7 +33,7 @@ def _policy_row(
     ts: int,
     plugin_version: Optional[str],
 ) -> dict:
-    """1 件の適用結果を policy イベント（キューの 1 行）に組み立てる。"""
+    """1 件の適用結果を policy イベント（キューの 1 行）にする。"""
     raw = {
         "event_id": _identity.new_event_id(),
         "ts": ts,
@@ -63,11 +53,9 @@ def _policy_row(
 
 
 def _apply_settings_step() -> None:
-    """設定を適用し、結果を policy イベントとしてキューに積む。無効化スイッチの影響を受けない。
+    """設定を適用し、結果を policy イベントとしてキューに積む。
 
-    `plugin_version` の取得もこの中で行う。ここより外に置くと、その失敗がお知らせの表示と
-    収集まで巻き添えにする（「hook は無言で消えない」という原則に反する）。
-    `policy` の import も同じ理由でここに置く（配った定義の誤りを設定の適用だけに閉じ込める）。
+    `policy` の import と版の取得をここに置き、その失敗をお知らせと収集へ波及させない。
     """
     import policy
 
@@ -80,16 +68,10 @@ def _apply_settings_step() -> None:
         )
 
 
-def _notices_step(disabled: bool) -> tuple:
-    """未読のお知らせから出力用の dict を組み立てる。実体は `_notices.notices_step`。"""
-    return _notices.notices_step(disabled, _NOTICES_PATH)
-
-
 def _mark_seen_and_open(unread: list, seen: set) -> None:
-    """未読を既読に加え、書けた場合に限り対話セッションなら先頭の URL を開く。
+    """未読を既読にし、対話セッションなら先頭の URL を開く。非対話起動では既読にしない。
 
-    非対話起動では既読にしない（人が表示を見ていないため）。既読を書けない端末で
-    ブラウザが毎回開かないよう、開くのは既読の記録に成功した後だけにする。
+    開くのは既読を書けた後だけ（書けない端末で毎回開かないため）。
     """
     if _browser.is_headless():
         return
@@ -102,13 +84,10 @@ def _mark_seen_and_open(unread: list, seen: set) -> None:
 
 
 def _emit_output(output: dict) -> bool:
-    """hook の JSON 出力を標準出力へ 1 個だけ書く。書き出しと flush が例外なく終われば真。
+    """hook の JSON 出力を標準出力へ 1 個だけ書く。書けたら真。
 
-    失敗した場合、fd 1 を `/dev/null` に差し替える。標準出力のパイプの読み口が閉じている
-    ときなど、`write`/`flush` の失敗を捕まえてもなお、`TextIOWrapper` 内部の
-    `BufferedWriter` に書き込み済みのデータが残っていることがある。それがインタプリタ
-    終了時の最終 flush で再送され、そこでも失敗すると標準エラーに漏れて exit 120 になる
-    （`sys.stdout` を差し替えるだけでは、この残ったバッファには効かない）。
+    失敗時は fd 1 を `/dev/null` に差し替える。内部バッファに残ったデータが終了時の flush で
+    再び失敗し、標準エラーに漏れて exit 120 になるため（`sys.stdout` の差し替えでは防げない）。
     """
     try:
         sys.stdout.write(json.dumps(output, ensure_ascii=False))
@@ -124,26 +103,26 @@ def _emit_output(output: dict) -> bool:
 
 
 def _collect_step(hook_event: Optional[str], disabled: bool) -> None:
-    """SessionStart の利用ログを収集する。送信条件の判定は無効化スイッチの外側で行う。
+    """利用ログを収集し、送信条件を判定する。送信判定は無効化スイッチの外側で行う。
 
-    標準入力の読み取りもこの中で行う。ここより外に置くと、その失敗（深い入れ子の JSON
-    による `RecursionError` など）が設定の適用とお知らせの表示まで巻き添えにする。
+    標準入力の読み取り（`RecursionError` などを投げうる）もここに置き、失敗を他の段へ波及させない。
     """
     if not disabled:
         raw_input = _read_stdin_json()
         _spool.append(extract_event(raw_input, hook_event))
 
-    if _spool.should_send():
-        _spool.mark_sent()
-        import _sender
-
-        _sender.launch()
+    send_if_due()
 
 
 def main() -> None:
-    """statusline.js の同期 -> 設定の適用 -> お知らせの表示 -> イベントの収集の順に実行する。"""
     hook_event: Optional[str] = sys.argv[1] if len(sys.argv) > 1 else None
     disabled = bool(os.environ.get(_DISABLE_ENV))
+
+    # 以降の段はキャッシュを読む。git の設定の変更をセッションごとに拾うため、ここで解決し直す
+    try:
+        _identity.get_user_email(refresh=True)
+    except Exception:  # noqa: BLE001, S110 (hook は例外を外に出さない)
+        pass
 
     # 設定より先に置く。設定がこのファイルを指したとき、既に在るようにするため
     try:
@@ -157,7 +136,7 @@ def main() -> None:
         pass
 
     try:
-        output, unread, seen = _notices_step(disabled)
+        output, unread, seen = _notices.notices_step(disabled, _notices._NOTICES_PATH)
     except Exception:  # noqa: BLE001 (hook は例外を外に出さない)
         output, unread, seen = {}, [], set()
 

@@ -1,9 +1,4 @@
-"""ローカルキューへの追記・spool への退避・上限を超えた spool の破棄。標準ライブラリのみで動く。
-
-hook が同期的に行う I/O は「1 回の追記」と「送信条件判定のための stat」だけである。
-リトライループ・指数バックオフ・ACK は持たない。いずれの関数も失敗を呼び出し元に伝えず、
-例外を外に出さない（hook は利用者の作業を妨げない）。
-"""
+"""キューへの追記・spool への退避・上限超えの破棄。いずれも例外を外に出さない。"""
 
 import json
 import os
@@ -28,11 +23,9 @@ _SECONDS_PER_DAY = 86400
 
 
 def _state_dir() -> Path:
-    """端末の状態の置き場所を解決する。`CLAUDE_PLUGIN_DATA` が無ければ代替経路を使う。
+    """端末の状態の置き場所（`CLAUDE_PLUGIN_DATA`、無ければ代替経路）。
 
-    解決規則はここ 1 か所に置く。`_identity.py` はこの関数を呼ぶだけにする。
-    `Path.home()` は呼び出しのたびに評価する。import 時に評価して定数化すると、
-    テストや隔離環境での `HOME` の差し替えが効かなくなり、利用者本人の `~/.claude/` に書き込む。
+    毎回評価する。定数化すると隔離の差し替えが効かず、利用者本人の `~/.claude/` に書き込む。
     """
     plugin_data = os.environ.get(_STATE_DIR_ENV)
     if plugin_data:
@@ -41,25 +34,21 @@ def _state_dir() -> Path:
 
 
 def _queue_path() -> Path:
-    """`queue.jsonl` のパスを返す。"""
     return _state_dir() / _QUEUE_FILENAME
 
 
 def _spool_dir() -> Path:
-    """`spool/` のパスを返す。"""
     return _state_dir() / _SPOOL_DIRNAME
 
 
 def _sent_at_path() -> Path:
-    """`sent_at` のパスを返す。"""
     return _state_dir() / _SENT_AT_FILENAME
 
 
 def append(row: dict[str, Any]) -> None:
-    """1 行分の dict を `queue.jsonl` に追記する。`open(..., "a")` + 1 回の `write` のみ。
+    """1 行を `queue.jsonl` に 1 回の `write` で追記する。
 
-    `ensure_ascii=True` で書き出す。孤立サロゲートを含む文字列は `\\uXXXX` 形式で
-    エスケープされ、UTF-8 での符号化に失敗しない（`ensure_ascii=False` は失敗しうる）。
+    `ensure_ascii=True` にする。`False` だと孤立サロゲートで UTF-8 の符号化に失敗する。
     """
     try:
         line = json.dumps(row, ensure_ascii=True) + "\n"
@@ -74,9 +63,7 @@ def append(row: dict[str, Any]) -> None:
 def rotate() -> None:
     """`queue.jsonl` を `spool/<epoch>-<uuid4hex>.jsonl` に退避する。
 
-    ファイル名に UUID を含めるのは、複数のセッションが同一秒に退避しても
-    `os.rename` が既存ファイルを黙って置き換えて先行イベントを消さないようにするため。
-    `queue.jsonl` が無い・0 バイトのときは何もしない。
+    UUID を含めるのは、同一秒の退避で `os.rename` が先行ファイルを黙って上書きしないため。
     """
     try:
         queue_path = _queue_path()
@@ -91,10 +78,9 @@ def rotate() -> None:
 
 
 def should_send(threshold_sec: int = DEFAULT_FLUSH_INTERVAL_SEC) -> bool:
-    """送信条件を判定する。行数による条件は持たない。
+    """キューがあり、`sent_at` が無いか `threshold_sec` 秒以上前なら真。
 
-    `queue.jsonl` が無ければ偽（送るものが無い）。`sent_at` が無ければ真。
-    それ以外は `sent_at` の mtime から `threshold_sec` 秒以上経過していれば真。
+    mtime が未来のときも真にする（偽にするとその時刻まで送信が止まる）。
     """
     try:
         if not _queue_path().exists():
@@ -103,13 +89,12 @@ def should_send(threshold_sec: int = DEFAULT_FLUSH_INTERVAL_SEC) -> bool:
         if not sent_at_path.exists():
             return True
         elapsed = time.time() - sent_at_path.stat().st_mtime
-        return elapsed >= threshold_sec
+        return elapsed < 0 or elapsed >= threshold_sec
     except OSError:
         return False
 
 
 def mark_sent() -> None:
-    """`sent_at` の mtime を現在時刻に更新する（無ければ作る）。"""
     try:
         path = _sent_at_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,10 +107,7 @@ def prune(
     max_bytes: int = DEFAULT_SPOOL_MAX_BYTES,
     max_days: int = DEFAULT_SPOOL_MAX_DAYS,
 ) -> None:
-    """spool の合計サイズ・保持日数の上限を超えたファイルを、古い順に削除する。
-
-    `.jsonl` 以外のファイルは対象にしない。`spool/` が無ければ何もしない。
-    """
+    """spool の合計サイズ・保持日数の上限を超えた `.jsonl` を古い順に消す。"""
     try:
         spool_dir = _spool_dir()
         if not spool_dir.is_dir():
