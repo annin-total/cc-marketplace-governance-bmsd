@@ -1,10 +1,6 @@
-"""detach して POST する送信プロセス。標準ライブラリのみで動く。
+"""spool を POST する送信プロセス（`python3 _sender.py`）。例外を外に出さない。"""
 
-`python3 _sender.py` として独立プロセスで起動される想定。リトライループ・
-指数バックオフ・ACK は持たない。1 ファイルの失敗で後続のファイルを止めない。
-どの経路でも例外を外に出さず、終了コードは常に 0 とする。
-"""
-
+import http.client
 import json
 import os
 import subprocess
@@ -28,7 +24,7 @@ _DEFAULT_CONFIG = {
 
 
 def _load_config() -> Optional[dict[str, Any]]:
-    """`config.json` を読む。読めない・壊れている・dict でない場合は None を返す。"""
+    """`config.json` を読む。読めなければ None。"""
     try:
         with open(_CONFIG_PATH, encoding="utf-8") as f:
             data = json.load(f)
@@ -40,19 +36,19 @@ def _load_config() -> Optional[dict[str, Any]]:
 
 
 def _spool_files_sorted() -> list[Path]:
-    """spool 内の `.jsonl` ファイルを、ファイル名（epoch 昇順）でソートして返す。"""
+    """spool の `.jsonl` をファイル名（epoch）の昇順で返す。"""
     spool_dir = _spool._spool_dir()
     if not spool_dir.is_dir():
         return []
     return sorted(spool_dir.glob("*.jsonl"))
 
 
-def _post_file(path: Path, config: dict[str, Any]) -> None:
-    """1 ファイルを POST する。2xx なら削除、それ以外は残す。例外は外に出さない。"""
+def _post_file(path: Path, config: dict[str, Any]) -> bool:
+    """1 ファイルを POST し、2xx なら消す。サーバに届かなかったら偽。"""
     try:
         body = path.read_bytes()
     except OSError:
-        return
+        return True
 
     request = urllib.request.Request(
         config["ingest_url"],
@@ -68,39 +64,38 @@ def _post_file(path: Path, config: dict[str, Any]) -> None:
             status = response.status
     except urllib.error.HTTPError as err:
         status = err.code
-    except (urllib.error.URLError, OSError):
-        return
+    # 応答が壊れていると OSError 派生でない HTTPException が出る。逃がすと prune が飛ぶ
+    except (urllib.error.URLError, OSError, http.client.HTTPException):
+        return False
 
     if 200 <= status < 300:
         try:
             os.remove(path)
         except OSError:
             pass
+    return True
 
 
 def run() -> None:
-    """送信プロセス本体。config を読み、退避 → 破棄 → 古い順に POST する。
-
-    hook プロセスと同様に、例外を外に出さない（想定外の例外も握り潰す）。
-    """
+    """退避 → 古い順に POST → 破棄。破棄を後に置き、上限超えのファイルにも 1 回は送る。"""
     try:
         config = _load_config()
-        if config is None or not config["ingest_url"]:
+        if config is None:
             return
         _spool.rotate()
+        # 送信先が空でも退避と破棄は行う。行わないと queue.jsonl が上限なしに増える
+        paths = _spool_files_sorted() if config["ingest_url"] else []
+        for path in paths:
+            # 応答しないサーバに対して、ファイル数 × timeout_sec 粘らない
+            if not _post_file(path, config):
+                break
         _spool.prune(config["spool_max_bytes"], config["spool_max_days"])
-        for path in _spool_files_sorted():
-            _post_file(path, config)
     except Exception:  # noqa: BLE001, S110 (送信プロセスは例外を外に出さない)
         pass
 
 
 def launch() -> None:
-    """送信プロセスを detach して起動する。待たない。
-
-    `stdin` / `stdout` / `stderr` を `DEVNULL` にし、`start_new_session=True` で
-    親（hook プロセス）から切り離す。
-    """
+    """送信プロセスを detach して起動する。待たない。"""
     try:
         subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve())],

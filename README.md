@@ -38,3 +38,10 @@ scripts/validate.py               # 収録プラグインと雛形の検証（py
 ## プラグインの雛形
 
 `templates/plugin/` は、BMSD 以外の部署が自部署の Claude Code プラグインを作るときの出発点である。`plugin.json` とサンプルスキル 1 件だけの最小構成で、`governance` 固有の内容は含まない。使い方は `templates/plugin/README.md` にある。
+
+## 検査
+
+```bash
+claude plugin validate --strict .
+claude plugin validate --strict plugins/governance
+```

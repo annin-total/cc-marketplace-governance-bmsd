@@ -1,17 +1,9 @@
-"""全 hook 共通のイベント収集エントリ。hook の種類で分岐せず、契約のキーパスを読むだけ。
-
-`python3 collect.py <hook_event>` として単体で実行できる入口を持つ。
-標準入力から hook の JSON を読み、キューに追記し、`SessionStart` / `Stop` のときだけ
-送信条件を判定して送信プロセスを起動する。例外は外に出さず、常に exit 0 とする。
-"""
+"""全 hook 共通のイベント収集エントリ（`python3 collect.py <hook_event>`）。常に exit 0。"""
 
 if __name__ == "__main__":
-    # `except BaseException` は `main()` の実行中しか守らない。SIGINT がこの下の
-    # import 文の最中に届くと、まだ try 節の外であるためトレースバックが標準エラーに漏れる
-    # （実測で確認済み）。`_signal` は enum ラッパーを介さない素の C 拡張であり、
-    # import より前に SIGINT を無視することで、この窓を最小化する。
-    # スクリプトとして起動されたときだけ立てる。モジュールとして import しただけの
-    # 呼び出し元プロセス（pytest 等）の SIGINT まで殺さないため。
+    # 下の import 中に SIGINT が届くと、try の外なのでトレースバックが標準エラーに漏れる。
+    # そのため import より前に無視する。`signal` より import が桁違いに軽い `_signal` を使う。
+    # スクリプト起動時だけ立てる（import した側のプロセスの SIGINT を殺さない）。
     import _signal
 
     _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
@@ -33,11 +25,7 @@ _DISABLE_ENV = "CC_GOVERNANCE_DISABLE"
 
 
 def extract_event(raw_input: Any, hook_event: Optional[str]) -> dict[str, Any]:
-    """hook 入力から送信する1行分の dict を組み立てる。
-
-    `raw_input` が dict でない場合も例外にせず、HOOK_FIELDS 由来の列をすべて None にする。
-    `EXTRA_COLUMNS` / `HOOK_FIELDS` のどちらの値も、契約の `coerce` で列の型に合わせる。
-    """
+    """hook 入力からキューの 1 行を組み立てる。dict でない入力は hook 由来の列を None にする。"""
     obj = raw_input if isinstance(raw_input, dict) else {}
 
     ts = int(time.time())
@@ -62,14 +50,13 @@ def extract_event(raw_input: Any, hook_event: Optional[str]) -> dict[str, Any]:
 
 
 def _resolve_context_tokens(obj: dict, hook_event: Optional[str]):
-    """`PreCompact` / `Stop` のときだけ transcript から context_tokens を算出する。"""
     if hook_event not in _CONTEXT_TOKEN_HOOK_EVENTS:
         return None
     return _context.context_tokens(dig(obj, ("transcript_path",)))
 
 
 def _read_stdin_json() -> Any:
-    """標準入力を読んで JSON としてパースする。読めない・パースできない場合は None。"""
+    """標準入力を JSON として読む。読めなければ None。"""
     try:
         text = sys.stdin.read()
     except (OSError, ValueError):
@@ -80,12 +67,19 @@ def _read_stdin_json() -> Any:
         return None
 
 
-def main() -> None:
-    """collect.py の入口。
+def send_if_due() -> None:
+    """送信条件を満たせば `sent_at` を更新し、送信プロセスを起動する。"""
+    if not _spool.should_send():
+        return
+    # 先に sent_at を更新し、同時に開いたセッションの一斉起動を防ぐ。
+    _spool.mark_sent()
+    # 先頭で import すると urllib.request・ssl の読み込みを毎回払う。
+    import _sender
 
-    無効化スイッチ判定 -> 収集 -> `SessionStart` / `Stop` のときだけ送信条件判定の順で行う。
-    `sent_at` の更新は送信プロセスの起動より先に行う（同時に開いたセッションの一斉起動を防ぐ）。
-    """
+    _sender.launch()
+
+
+def main() -> None:
     if os.environ.get(_DISABLE_ENV):
         return
 
@@ -94,17 +88,12 @@ def main() -> None:
     row = extract_event(raw_input, hook_event)
     _spool.append(row)
 
-    if hook_event in _SEND_CHECK_HOOK_EVENTS and _spool.should_send():
-        _spool.mark_sent()
-        import _sender
-
-        _sender.launch()
+    if hook_event in _SEND_CHECK_HOOK_EVENTS:
+        send_if_due()
 
 
 if __name__ == "__main__":
     try:
         main()
-    except BaseException:  # noqa: BLE001, S110 (hook は例外を外に出さず常に exit 0。SIGINT による
-        # KeyboardInterrupt も含めて画面を汚さない。インタプリタ起動中の SIGINT はこの try の
-        # 外側で発生するため防げないが、その窓では標準エラーへの出力自体がまだ無い)
+    except BaseException:  # noqa: BLE001, S110 (KeyboardInterrupt も含めて常に exit 0)
         pass

@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 /**
- * statusLine 用サンプルスクリプト（動作検証用、任意機能）。
- *
- * stdin に Claude Code の statusLine JSON を受け取り、stdout に表示文字列を出す。
- * 依存は Node 標準モジュールのみ。Windows/macOS で共通に動く。
- * スキーマ: https://code.claude.com/docs/en/statusline
- * 入力欠落・破損があっても例外で落ちず、出せる範囲で出して必ず exit 0 する。
+ * ステータスライン（配布物。SessionStart で `<config_dir>/governance/` へ同期される）。
+ * 入力: https://code.claude.com/docs/en/statusline 。入力が壊れていても必ず exit 0 する。
  */
 
 "use strict";
@@ -33,10 +29,15 @@ function formatModelName(model, effort) {
   return name ? `${name} (${level})` : "";
 }
 
+/** 作業ディレクトリ。無ければ空文字。 */
+function currentDir(data) {
+  return (data.workspace && data.workspace.current_dir) || data.cwd || "";
+}
+
 /** 1 行目: model | dir | ctx% (used/window) · session tokens · edit (+a, -r) */
 function buildLine1(data) {
   const model = formatModelName(data.model, data.effort);
-  const dir = (data.workspace && data.workspace.current_dir) || data.cwd || "";
+  const dir = currentDir(data);
   const dirName = dir ? path.basename(dir) : "";
 
   const parts = [model, dirName].filter((s) => s);
@@ -109,8 +110,7 @@ function readGitInfo(dir, worktree) {
 
 /** 2 行目: branch [worktree] (+a, -r)。git 管理下でなければ null。 */
 function buildLine2(data) {
-  const dir = (data.workspace && data.workspace.current_dir) || data.cwd || "";
-  const info = readGitInfo(dir, data.worktree);
+  const info = readGitInfo(currentDir(data), data.worktree);
   if (!info) return null;
 
   let line = info.branch;

@@ -12,7 +12,6 @@ from _settings import apply_settings
 
 
 def main() -> None:
-    """statusline.js を同期し、ONCE の記録を消してから全体を適用する。"""
     sys.stdout.reconfigure(encoding="utf-8")
     gov_dir = _govdir.governance_dir()
     _govdir.sync_statusline(gov_dir)
