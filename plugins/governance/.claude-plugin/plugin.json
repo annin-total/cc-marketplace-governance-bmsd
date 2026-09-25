@@ -1,6 +1,6 @@
 {
   "name": "governance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "BMSD 本部向けの利用状況収集とポリシー適用を行う端末プラグイン",
   "author": {
     "name": "BMSD"

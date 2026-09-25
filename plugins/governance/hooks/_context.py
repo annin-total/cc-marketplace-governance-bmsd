@@ -19,6 +19,7 @@ def context_tokens(path: Optional[str], tail: int = _TAIL_BYTES) -> Optional[int
         return None
     for line in reversed(chunk.split(b"\n")):
         total = _usage_total(line)
+        # 合計 0 は API エラー応答の行であり、採ると文脈量 0 の実データと画面上で区別できない。
         if total:
             return total
     return None
