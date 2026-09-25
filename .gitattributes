@@ -1,0 +1,2 @@
+# 改行を LF に統一する。リリース時の diff -r による正本との一致確認が Windows の autocrlf で壊れないため
+* text=auto eol=lf
