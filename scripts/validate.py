@@ -5,7 +5,8 @@
 未知フィールド）は `claude plugin validate --strict` に委譲する。
 
 このスクリプトが自前で見るのは、配布リポジトリ固有の関心事である
-「.gitignore に飲まれた配布物の欠落」だけである。標準ライブラリ以外の
+「.gitignore に飲まれた配布物の欠落」と「governance の送信先の設定漏れ」である。
+送信先が空のまま配ると、端末は何も送らないまま導入済みに見える。標準ライブラリ以外の
 import・hook の終了コードは、プラグインをここへ差し込む前の検証で見る。
 配布物はその検証を通ったものの複製なので、ここでは二重に検査しない。
 
@@ -20,6 +21,8 @@ from pathlib import Path
 from shutil import which
 
 FAIL = False
+GOVERNANCE_CONFIG = Path("plugins") / "governance" / "config.json"
+REQUIRED_INGEST_KEYS = ("ingest_url", "ingest_token")
 
 
 def ok(message: str) -> None:
@@ -89,6 +92,27 @@ def check_no_gitignored_files(name: str, repo_root: Path, relative_source: str) 
         ok(f"'{name}': git に無視されているファイルは無い")
 
 
+# --- governance の送信先が設定済み（値は表示しない）---
+def check_ingest_config(repo_root: Path) -> None:
+    config_path = repo_root / GOVERNANCE_CONFIG
+    try:
+        with config_path.open(encoding="utf-8") as f:
+            config = json.load(f)
+    except (OSError, ValueError):
+        ng(f"{GOVERNANCE_CONFIG.as_posix()} が読めない、または JSON として不正")
+        return
+    if not isinstance(config, dict):
+        ng(f"{GOVERNANCE_CONFIG.as_posix()} がオブジェクトでない")
+        return
+
+    for key in REQUIRED_INGEST_KEYS:
+        value = config.get(key)
+        if isinstance(value, str) and value.strip():
+            ok(f"{GOVERNANCE_CONFIG.as_posix()}: {key} が設定されている")
+        else:
+            ng(f"{GOVERNANCE_CONFIG.as_posix()}: {key} が空・未設定")
+
+
 def _validate_plugin_entry(repo_root: Path, name: str, source: str) -> None:
     """1件のプラグイン（上流への委譲 + gitignore 検査）を検証する。"""
     if not name or not source:
@@ -131,6 +155,8 @@ def main(argv: list) -> int:
         name = entry.get("name", "") if isinstance(entry, dict) else ""
         source = entry.get("source", "") if isinstance(entry, dict) else ""
         _validate_plugin_entry(repo_root, name, source)
+
+    check_ingest_config(repo_root)
 
     template_dir = repo_root / "templates" / "plugin"
     if template_dir.is_dir():
