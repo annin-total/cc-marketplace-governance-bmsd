@@ -44,4 +44,7 @@ scripts/validate.py               # 収録プラグインと雛形の検証（py
 ```bash
 claude plugin validate --strict .
 claude plugin validate --strict plugins/governance
+python scripts/validate.py
 ```
+
+`scripts/validate.py` は上の 2 つに加えて、`plugins/governance/config.json` の `ingest_url` と `ingest_token` が空でないことを確かめる。
